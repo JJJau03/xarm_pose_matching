@@ -185,6 +185,27 @@ class PoseEstimator():
         self.pcd.paint_uniform_color([1, 0, 0])  # Paint the first point cloud red
         scaled_pcd2.paint_uniform_color([0, 1, 0])  # Paint the scaled point cloud green
         o3d.visualization.draw_geometries([self.pcd, scaled_pcd2])
+                # === ICP Final ===
+        threshold = 0.01  # ajusta este valor si es necesario
+        print("Ejecutando ICP...")
+        reg_p2p = o3d.pipelines.registration.registration_icp(
+            scaled_pcd2,  # source: el modelo ajustado (escalado + rotado)
+            self.pcd,     # target: nube segmentada de la escena
+            threshold,
+            np.eye(4),
+            o3d.pipelines.registration.TransformationEstimationPointToPoint()
+        )
+        
+        print("Transformación ICP:")
+        print(reg_p2p.transformation)
+
+        # Aplicar transformación estimada al modelo
+        final_model = scaled_pcd2.transform(reg_p2p.transformation)
+
+        # Visualización final
+        self.pcd.paint_uniform_color([1, 0, 0])         # escena en rojo
+        final_model.paint_uniform_color([0, 1, 0])      # modelo en verde
+        o3d.visualization.draw_geometries([self.pcd, final_model])
 
     def main(self):
         self.processing()
