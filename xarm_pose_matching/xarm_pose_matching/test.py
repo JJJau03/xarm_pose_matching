@@ -114,32 +114,3 @@ o3d_depth = o3d.geometry.Image(result_depth)
 rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d_color, o3d_depth, convert_rgb_to_intensity=False)
 pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, camera_intrinsic)
 pcd.transform([[1,0,0,0], [0,-1,0,0], [0,0,-1,0], [0,0,0,1]])
-# Mostrar imagen de profundidad con máscara
-ax[0,1].imshow(depth_with_mask)
-ax[0,1].set_title("Depth with Mask")
-ax[0,1].axis('off')
-
-# Mostrar imagen de profundidad filtrada
-ax[0,2].imshow(depth_filtered, cmap='gray')
-ax[0,2].set_title("Depth Filtered")
-ax[0,2].axis('off')
-
-ax[1,0].imshow(cleaned_mask, cmap='gray')
-ax[1,0].set_title("Cleaned Mask")
-ax[1,0].axis("off")
-
-ax[1,1].imshow(cv2.cvtColor(result_rgb, cv2.COLOR_BGR2RGB))
-ax[1,1].set_title("Depth Result Mask")
-ax[1,1].axis("off")
-
-ax[1,2].hist(depth_image.ravel(), bins=100, color='blue', alpha=0.7)
-ax[1,2].set_title("Depth Histogram")
-ax[1,2].set_xlabel("Depth Value")
-ax[1,2].set_ylabel("Frequency")
-
-# Mostrar la figura con los 3 subplots
-plt.tight_layout()
-plt.show()
-
-o3d.visualization.draw_geometries([pcd])
-#o3d.io.write_point_cloud("/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/rgb_image_V2.ply", pcd)

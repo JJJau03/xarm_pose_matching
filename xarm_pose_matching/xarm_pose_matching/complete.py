@@ -7,6 +7,9 @@ import trimesh
 import cvzone
 from PIL import Image, ImageDraw, ImageFont
 import json
+import copy
+from alignment import PointCloudVersion
+from wunsch import *
 
 yolo_model_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/model/Segmentation_YOLO_v2.pt"
 rgb_image_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/color/00002.jpg"
@@ -148,64 +151,68 @@ class PoseEstimator():
     def estimator(self):
         #Line from center to peduncle
         model = o3d.io.read_point_cloud(model_path) 
-        direction, centroid, peduncle_point = self.compute_line(model)
-        direction_scan, centroid_scan, peduncle_point_scan = self.compute_line(self.pcd)
-        #Translated Models
-        self.pcd = self.coordinate_frame(self.pcd,peduncle_point_scan)
-        #model = self.coordinate_frame(model,peduncle_point_scan)
+        # direction, centroid, peduncle_point = self.compute_line(model)
+        # direction_scan, centroid_scan, peduncle_point_scan = self.compute_line(self.pcd)
+        # #Translated Models
+        # self.pcd = self.coordinate_frame(self.pcd,peduncle_point_scan)
+        # #o3d.visualization.draw_geometries([model, self.pcd])
+        # # #model = self.coordinate_frame(model,peduncle_point_scan)
+        # #self.align_with_pca_icp(model, self.pcd)
         
-        #Rotation
-        initial_direction = direction / np.linalg.norm(direction)
-        target_direction = direction_scan / np.linalg.norm(direction_scan)
+        # #Rotation
+        # initial_direction = direction / np.linalg.norm(direction)
+        # target_direction = direction_scan / np.linalg.norm(direction_scan)
 
-        # Compute the rotation
-        axis, angle = self.compute_rotation(initial_direction, target_direction)
-        R = self.axis_angle_to_rotation_matrix(axis, angle)
-        source_points = np.asarray(model.points)
+        # # Compute the rotation
+        # axis, angle = self.compute_rotation(initial_direction, target_direction)
+        # R = self.axis_angle_to_rotation_matrix(axis, angle)
+        # source_points = np.asarray(model.points)
 
-        # Apply rotation to 3D model
-        rotated_points_np = self.apply_rotation(source_points, R)
-        rotated_pcd = o3d.geometry.PointCloud()
-        rotated_pcd.points = o3d.utility.Vector3dVector(rotated_points_np)
-        o3d.visualization.draw_geometries([rotated_pcd, self.pcd])
+        # # Apply rotation to 3D model
+        # rotated_points_np = self.apply_rotation(source_points, R)
+        # rotated_pcd = o3d.geometry.PointCloud()
+        # rotated_pcd.points = o3d.utility.Vector3dVector(rotated_points_np)
+        # o3d.visualization.draw_geometries([rotated_pcd, self.pcd])
 
-        #Rotate along Z-axis
-        angle_180_degrees = (np.pi)  # 180° in radians
-        R_180 = self.rotation_matrix_around_z(angle_180_degrees)
-        flipped_points_np = self.apply_rotation(rotated_points_np, R_180)
-        flipped_pcd = o3d.geometry.PointCloud()
-        flipped_pcd.points = o3d.utility.Vector3dVector(flipped_points_np)
-        o3d.visualization.draw_geometries([flipped_pcd, self.pcd])
+        # #Rotate along Z-axis
+        # angle_180_degrees = (7/6)*(np.pi)  # 180° in radians
+        # R_180 = self.rotation_matrix_around_z(angle_180_degrees)
+        # flipped_points_np = self.apply_rotation(rotated_points_np, R_180)
+        # flipped_pcd = o3d.geometry.PointCloud()
+        # flipped_pcd.points = o3d.utility.Vector3dVector(flipped_points_np)
+        # o3d.visualization.draw_geometries([flipped_pcd, self.pcd])
 
-        #Scaling the model
-        target_dimensions = self.get_dimensions(self.pcd)
-        scaled_pcd2 = self.scale_point_cloud(flipped_pcd, target_dimensions)
+        # #Scaling the model
+        # target_dimensions = self.get_dimensions(self.pcd)
+        # scaled_pcd2 = self.scale_point_cloud(flipped_pcd, target_dimensions)
 
-        # We paint the point clouds to be able to distinguish between them
-        self.pcd.paint_uniform_color([1, 0, 0])  # Paint the first point cloud red
-        scaled_pcd2.paint_uniform_color([0, 1, 0])  # Paint the scaled point cloud green
-        o3d.visualization.draw_geometries([self.pcd, scaled_pcd2])
-                # === ICP Final ===
-        threshold = 0.01  # ajusta este valor si es necesario
-        print("Ejecutando ICP...")
-        reg_p2p = o3d.pipelines.registration.registration_icp(
-            scaled_pcd2,  # source: el modelo ajustado (escalado + rotado)
-            self.pcd,     # target: nube segmentada de la escena
-            threshold,
-            np.eye(4),
-            o3d.pipelines.registration.TransformationEstimationPointToPoint()
-        )
+        # # We paint the point clouds to be able to distinguish between them
+        # self.pcd.paint_uniform_color([1, 0, 0])  # Paint the first point cloud red
+        # scaled_pcd2.paint_uniform_color([0, 1, 0])  # Paint the scaled point cloud green
+        # o3d.visualization.draw_geometries([self.pcd, scaled_pcd2])
+        # # === ICP Final ===
+        # threshold = 0.005  # ajusta este valor si es necesario
+        # print("Ejecutando ICP...")
+        # reg_p2p = o3d.pipelines.registration.registration_icp(
+        #     scaled_pcd2,  # source: el modelo ajustado (escalado + rotado)
+        #     self.pcd,     # target: nube segmentada de la escena
+        #     threshold,
+        #     np.eye(4),
+        #     o3d.pipelines.registration.TransformationEstimationPointToPoint()
+        # )
         
-        print("Transformación ICP:")
-        print(reg_p2p.transformation)
+        # print("Transformación ICP:")
+        # print(reg_p2p.transformation)
 
-        # Aplicar transformación estimada al modelo
-        final_model = scaled_pcd2.transform(reg_p2p.transformation)
+        # # Aplicar transformación estimada al modelo
+        # final_model = scaled_pcd2.transform(reg_p2p.transformation)
 
-        # Visualización final
-        self.pcd.paint_uniform_color([1, 0, 0])         # escena en rojo
-        final_model.paint_uniform_color([0, 1, 0])      # modelo en verde
-        o3d.visualization.draw_geometries([self.pcd, final_model])
+        # # Visualización final
+        # self.pcd.paint_uniform_color([1, 0, 0])         # escena en rojo
+        # final_model.paint_uniform_color([0, 1, 0])      # modelo en verde
+        # o3d.visualization.draw_geometries([self.pcd, final_model])
+        object1 = PointCloudVersion()
+        object1.main(self.pcd,model)
 
     def main(self):
         self.processing()
@@ -328,6 +335,52 @@ class PoseEstimator():
         scaled_pcd = o3d.geometry.PointCloud()
         scaled_pcd.points = o3d.utility.Vector3dVector(scaled_points)
         return scaled_pcd
+    
+    def align_with_pca_icp(self,source, target):
+        # Copias para no modificar original
+        source_copy = copy.deepcopy(source)
+        target_copy = copy.deepcopy(target)
+
+        # Centrar ambos en su centroide
+        source_center = source_copy.get_center()
+        target_center = target_copy.get_center()
+        source_copy.translate(-source_center)
+        target_copy.translate(-target_center)
+
+        # Obtener orientaciones por PCA
+        source_cov = np.cov(np.asarray(source_copy.points).T)
+        target_cov = np.cov(np.asarray(target_copy.points).T)
+
+        eigvals_s, eigvecs_s = np.linalg.eigh(source_cov)
+        eigvals_t, eigvecs_t = np.linalg.eigh(target_cov)
+
+        # Alinear orientación (R = V_target * V_source.T)
+        R_init = eigvecs_t @ eigvecs_s.T
+        source_copy.rotate(R_init)
+
+        # Moverlo al centro del target
+        source_copy.translate(target_center)
+
+        # Aplicar ICP
+        threshold = 0.01
+        reg_p2p = o3d.pipelines.registration.registration_icp(
+            source_copy, target_copy, threshold,
+            np.eye(4),
+            o3d.pipelines.registration.TransformationEstimationPointToPoint()
+        )
+
+        print("Transformación estimada por PCA + ICP:")
+        print(reg_p2p.transformation)
+
+        # Visualizar
+        final = copy.deepcopy(source)
+        final.transform(reg_p2p.transformation)
+        target.paint_uniform_color([1, 0, 0])
+        final.paint_uniform_color([0, 1, 0])
+        o3d.visualization.draw_geometries([final, target])
+
+        return reg_p2p.transformation
+
     
 if __name__=="__main__":#
     scene1 = PoseEstimator()
