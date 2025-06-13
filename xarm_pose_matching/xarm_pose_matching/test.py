@@ -14,6 +14,7 @@ rgb_image_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/im
 depth_image_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/depth/00002.png"
 kinect_scan_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/corrected.ply"
 model_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/corrected.ply"
+video_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/videos/RGB.mp4"
 
 with open("/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/intrinsic.json", 'r') as f:
     intrinsic_json = json.load(f)

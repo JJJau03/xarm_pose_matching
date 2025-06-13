@@ -1,3 +1,12 @@
+# Imports
+import rclpy
+from rclpy.node import Node
+import numpy as np
+from std_msgs.msg import Float32
+from geometry_msgs.msg import Twist, PoseStamped
+from nav_msgs.msg import Odometry
+from rclpy import qos
+#----------------------------------------------------#
 import open3d as o3d
 import numpy as np
 from ultralytics import YOLO
@@ -11,7 +20,6 @@ import copy
 from alignment import PointCloudVersion
 from wunsch import *
 import os
-import time
 
 yolo_model_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/model/Segmentation_YOLO_v2.pt"
 rgb_image_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/color/00400.jpg"
@@ -20,13 +28,17 @@ kinect_scan_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/
 model_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/corrected.ply"
 ply2_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/ply_scenes/output_ply/00010.ply"
 ply3_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/ply_scenes/output_ply/00067.ply"
-video_depth_path  = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/videos/Depth.mp4"
-video_rgb_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/videos/RGB.mp4"
 RGB_dir = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/color/"  # Ajusta esta ruta
 Depth_dir = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/depth/"
 
 class PoseEstimator():
     def __init__(self):
+        super().__init__('Pose_Estimation_Node')
+        ####################################################
+        #--------------------------------------------------#
+        #--------------------------------------------------# MOdificar el nodo de publicación de pose, checar con servicios
+        ####################################################
+        self.pos_pub = self.create_publisher(Twist,'pos',10)
         with open("/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/intrinsic.json", 'r') as f:
             intrinsic_json = json.load(f)
         intrinsic_matrix_flat = intrinsic_json['intrinsic_matrix']
@@ -157,7 +169,7 @@ class PoseEstimator():
         plt.tight_layout()
         plt.show()
         o3d.visualization.draw_geometries([self.pcd])
-
+    
     def estimator(self):
         model = self.ply
         ply2 = o3d.io.read_point_cloud(ply2_path)
@@ -171,7 +183,7 @@ class PoseEstimator():
         # #o3d.visualization.draw_geometries([model, self.pcd])
         # # #model = self.coordinate_frame(model,peduncle_point_scan)
         # #self.align_with_pca_icp(model, self.pcd)
-
+        
         # #Rotation
         # initial_direction = direction / np.linalg.norm(direction)
         # target_direction = direction_scan / np.linalg.norm(direction_scan)
@@ -213,7 +225,7 @@ class PoseEstimator():
         #     np.eye(4),
         #     o3d.pipelines.registration.TransformationEstimationPointToPoint()
         # )
-
+        
         # print("Transformación ICP:")
         # print(reg_p2p.transformation)
 
@@ -231,7 +243,7 @@ class PoseEstimator():
         model = object1.main(ply2, model)
         model = object1.main(ply3, model)
 
-    def segmentation(self):
+    def estimator2(self):
         model = self.model
         image_files = [f for f in os.listdir(RGB_dir) if f.lower().endswith(self.valid_extensions)]
         image_files.sort()  # Opcional: ordena alfabéticamente
@@ -267,7 +279,7 @@ class PoseEstimator():
         min_distances = []
         max_distances = []
         timestamps = []
-        start = time.time()
+
         for idx, image_file in enumerate(image_files):
             rgb_path = os.path.join(RGB_dir, image_file)
 
@@ -302,7 +314,7 @@ class PoseEstimator():
             timestamps.append(idx)
 
             print(f"{image_file} -> Min: {min_depth}, Max: {max_depth}")
-        print(time.time()-start)
+
         # Mostrar gráfica de resultados
         plt.figure(figsize=(12, 6))
         plt.plot(timestamps, min_distances, label='Distancia mínima', color='blue')
@@ -315,84 +327,14 @@ class PoseEstimator():
         plt.tight_layout()
         plt.show()
 
-    def rotation(self):
-        image_files = [f for f in os.listdir(RGB_dir) if f.lower().endswith(self.valid_extensions)]
-        image_files.sort()
-        model = self.ply
-        min_distances = []
-        max_distances = []
-        accuracy_ransac = []
-        accuracy_wunsch = []
-        timestamps = []
-        ply = PointCloudVersion()
-        for idx, image_file in enumerate(image_files):
-            rgb_path = os.path.join(RGB_dir, image_file)
-
-            # Construimos el path de profundidad usando el mismo nombre base
-            filename_base = os.path.splitext(image_file)[0]
-            depth_filename = filename_base + ".png"
-            depth_path = os.path.join(Depth_dir, depth_filename)
-
-            # Actualiza temporalmente los paths usados por `processing`
-            try:
-                self.processing(rgb_path, depth_path)
-                self.ply_generator()
-                wunsch,ransac = ply.main(self.pcd,model)
-            except Exception as e:
-                print(f"Error procesando {image_file}: {e}")
-                continue
-
-            # Tomar los valores válidos de profundidad segmentada
-            depth = self.result_depth
-            valid_pixels = depth[depth > 0]
-            if valid_pixels.size == 0:
-                min_depth = 0
-                max_depth = 0
-            else:
-                min_depth = valid_pixels.min()
-                max_depth = valid_pixels.max()
-
-            min_distances.append(min_depth)
-            max_distances.append(max_depth)
-            accuracy_ransac.append(ransac)
-            accuracy_wunsch.append(wunsch)
-            timestamps.append(idx)
-
-            #print(f"{image_file} -> Min: {min_depth}, Max: {max_depth}")
-        # Mostrar gráfica de resultados
-        plt.figure(figsize=(14, 6))  # Ajustamos tamaño para que quepan dos subplots
-
-        # Subplot 1: Profundidad mínima y máxima
-        plt.subplot(1, 2, 1)
-        plt.plot(timestamps, min_distances, label='Distancia mínima', color='blue')
-        plt.plot(timestamps, max_distances, label='Distancia máxima', color='red')
-        plt.xlabel("Frame")
-        plt.ylabel("Valor de profundidad")
-        plt.title("Evolución de la profundidad")
-        plt.legend()
-        plt.grid(True)
-
-        # Subplot 2: Accuracy RANSAC y WUNSCH
-        plt.subplot(1, 2, 2)
-        plt.plot(timestamps, accuracy_ransac, label='Accuracy RANSAC', color='green')
-        plt.plot(timestamps, accuracy_wunsch, label='Accuracy WUNSCH', color='orange')
-        plt.xlabel("Frame")
-        plt.ylabel("Accuracy")
-        plt.title("Evolución de la Accuracy")
-        plt.legend()
-        plt.grid(True)
-
-        plt.tight_layout()
-        plt.show()
 
     def main(self):
         # self.processing()
         # self.ply_generator()
         # self.plot()
-        # self.estimator()
-        # self.segmentation()
-        #self.statistic_graph()
-        self.rotation()
+        # #self.estimator()
+        # self.estimator2()
+        self.statistic_graph()
     
     def compute_centroid(self,model): 
         return np.mean(model.points, axis=0)
@@ -402,7 +344,7 @@ class PoseEstimator():
         threshold = np.percentile(coordinates,98)
         top_points = np.asarray(model.points)[coordinates>threshold]
         return np.mean(top_points,axis=0)
-
+    
     def compute_line(self,model):
         #base
         centroid = self.compute_centroid(model)
@@ -437,6 +379,7 @@ class PoseEstimator():
         o3d.visualization.draw_geometries([model, line_set])
         return model
 
+              
     def compute_rotation(self,v1,v2):
          # Normalize vectors
         v1 = v1 / np.linalg.norm(v1)
@@ -451,7 +394,7 @@ class PoseEstimator():
         rotation_angle = np.arccos(cos_angle)
         
         return rotation_axis, rotation_angle
-
+    
     def axis_angle_to_rotation_matrix(self, axis, angle):
         # Using the Rodrigues' rotation formula
         K = np.array([
@@ -553,13 +496,18 @@ class PoseEstimator():
         o3d.visualization.draw_geometries([final, target])
 
         return reg_p2p.transformation
-
     
-if __name__=="__main__":#
-    scene1 = PoseEstimator()
-    scene1.main()
+def main(args=None):
+    rclpy.init(args=args)
+    node = PoseEstimator()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+        node.destroy_node()
 
-
-#direction, centroid, peduncle_point = compute_line(self.pcd)
-#direction_scan, centroid_scan, peduncle_point_scan = compute_line_scan(model)
-#direction_scan, centroid_scan, peduncle_point_scan = compute_line_scan(translated_kinect_scan)
+if __name__ == '__main__':
+    main()

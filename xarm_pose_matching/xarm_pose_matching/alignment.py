@@ -54,6 +54,7 @@ class TriangleMeshVersion():
 
     def main(self):
         voxel_size = 0.01
+        
         print(":: Load two mesh.")
         target_mesh = o3d.io.read_triangle_mesh('bunny.ply')
         source_mesh = copy.deepcopy(target_mesh)
@@ -79,6 +80,8 @@ class PointCloudVersion():
     def __init__(self):
         self.source_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/corrected.ply"
         self.target_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/rgb_image_V2.ply"
+        self.ply2_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/ply_scenes/output_ply/00010.ply"
+        self.ply3_path = "/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/ply_scenes/output_ply/00067.ply"
 
     def draw_registration_result(self,source, target, transformation):   
         source_temp = copy.deepcopy(source)
@@ -87,6 +90,7 @@ class PointCloudVersion():
         target_temp.paint_uniform_color([0, 0.651, 0.929]) # azul
         source_temp.transform(transformation)
         o3d.visualization.draw_geometries([source_temp, target_temp])
+
     def print_matrix(self,transformation,option):
         # Extraer rotación y traslación
         rotation_matrix = transformation[:3, :3]
@@ -106,27 +110,46 @@ class PointCloudVersion():
 
 
     def preprocess_point_cloud(self,pcd, voxel_size):
-        print(":: Downsample with a voxel size %.3f." % voxel_size)
+        #print(":: Downsample with a voxel size %.3f." % voxel_size)
         pcd_down = pcd.voxel_down_sample(voxel_size)
 
         radius_normal = voxel_size * 2
-        print(":: Estimate normals with search radius %.3f." % radius_normal)
+        #print(":: Estimate normals with search radius %.3f." % radius_normal)
         pcd_down.estimate_normals(
             o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
 
         radius_feature = voxel_size * 5
-        print(":: Compute FPFH feature with search radius %.3f." % radius_feature)
+        #print(":: Compute FPFH feature with search radius %.3f." % radius_feature)
         pcd_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
             pcd_down,
             o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
         return pcd_down, pcd_fpfh
+    #ineficiente
+    def calculate_correspondence_accuracy(self,result, source_down, target_down):
+        num_corr = len(result.correspondence_set)
+        total_points = min(len(source_down.points), len(target_down.points))
+        accuracy = (num_corr / total_points) * 100  # como porcentaje
+        return accuracy
+    
+    def calculate_rmse(self,result, source_down, target_down):
+        src = np.asarray(source_down.points)
+        tgt = np.asarray(target_down.points)
+        transformation = result.transformation
+        transformed_src = (transformation[:3,:3] @ src.T).T + transformation[:3,3]
 
+        correspondences = np.array(result.correspondence_set)
+        src_corr = transformed_src[correspondences[:, 0]]
+        tgt_corr = tgt[correspondences[:, 1]]
+
+        errors = np.linalg.norm(src_corr - tgt_corr, axis=1)
+        rmse = np.sqrt(np.mean(errors ** 2))
+        return rmse
 
     def execute_global_registration(self,source_down, target_down, source_fpfh,
                                     target_fpfh, voxel_size):
         distance_threshold = voxel_size * 1.5
-        print(":: RANSAC registration on downsampled point clouds.")
-        print("   Using distance threshold %.3f." % distance_threshold)
+        #print(":: RANSAC registration on downsampled point clouds.")
+        #print("   Using distance threshold %.3f." % distance_threshold)
         result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
             source_down, target_down, source_fpfh, target_fpfh, True,
             distance_threshold,
@@ -332,18 +355,19 @@ class PointCloudVersion():
     def main(self,target,source):
         voxel_size = 0.01
 
-        print(":: Load two point clouds")
+        #print(":: Load target and source point clouds")
         # target = o3d.io.read_point_cloud(self.target_path)
         # source = o3d.io.read_point_cloud(self.source_path)
         # Simular transformación en el source
         #source.rotate(source.get_rotation_matrix_from_xyz((np.pi / 4, 0, np.pi / 4)), center=(0, 0, 0))
-        source.translate((0, 0.05, 0))
-        self.draw_registration_result(source, target, np.identity(4))
+        #source.translate((0, 0.05, 0))
+        # ======= source and target =================
+        #self.draw_registration_result(source, target, np.identity(4))
 
         target_dimensions = self.get_dimensions(target)
         #scaled_source = self.scale_point_cloud(source, target_dimensions)
         scaled_source = self.load_and_scale_ply(target,source)
-        o3d.visualization.draw_geometries([target,scaled_source])
+        #o3d.visualization.draw_geometries([target,scaled_source])
 
         # Preprocesamiento: downsample + normales + FPFH
         source_down, source_fpfh = self.preprocess_point_cloud(scaled_source, voxel_size)
@@ -357,13 +381,86 @@ class PointCloudVersion():
         result_ransac_Wunsch = self.execute_global_registration_Wunsch(source_down, target_down,
                                                     source_fpfh, target_fpfh,
                                                     voxel_size)
-        print(result_ransac)
-        self.print_matrix(result_ransac.transformation,0)
-        self.draw_registration_result(source_down, target_down, result_ransac.transformation)
-        self.draw_registration_result(scaled_source, target, result_ransac.transformation)
-        self.print_matrix(result_ransac.transformation,1)
-        self.draw_registration_result(source_down, target_down, result_ransac_Wunsch.transformation)
-        self.draw_registration_result(scaled_source, target, result_ransac_Wunsch.transformation)
+        rmse_ransac = self.calculate_rmse(result_ransac, source_down, target_down)
+        rmse_wunsch = self.calculate_rmse(result_ransac_Wunsch, source_down, target_down)
+
+        # print(result_ransac)
+        # self.print_matrix(result_ransac.transformation,0)
+        # # print(f"RANSAC - Porcentaje de correspondencias válidas: {accuracy_ransac:.2f}%")
+        # # accuracy_ransac = self.calculate_correspondence_accuracy(result_ransac, source_down, target_down)
+        # print(f"RANSAC - RMSE de correspondencias: {rmse_ransac:.4f}")
+        # self.draw_registration_result(source_down, target_down, result_ransac.transformation)
+        # self.draw_registration_result(scaled_source, target, result_ransac.transformation)
+        # self.print_matrix(result_ransac.transformation,1)
+        # # accuracy_wunsch = self.calculate_correspondence_accuracy(result_ransac_Wunsch, source_down, target_down)
+        # # print(f"Wunsch - Porcentaje de correspondencias válidas: {accuracy_wunsch:.2f}%")
+        # print(f"Wunsch - RMSE de correspondencias: {rmse_wunsch:.4f}")
+        # self.draw_registration_result(source_down, target_down, result_ransac_Wunsch.transformation)
+        # self.draw_registration_result(scaled_source, target, result_ransac_Wunsch.transformation)
+        return rmse_wunsch,rmse_ransac
+        
+        # ## ======= ply2 and target =================
+        # ply_2 = o3d.io.read_point_cloud(self.ply2_path)
+        # ply_3 = o3d.io.read_point_cloud(self.ply3_path)
+        # ply_2.translate((1, 0.0, 0.01))
+        # ply_3.translate((-0.3, 0.7, 1.8))
+        
+        # self.draw_registration_result(source, ply_2, np.identity(4))
+
+        # target_dimensions = self.get_dimensions(target)
+        # #scaled_source = self.scale_point_cloud(source, target_dimensions)
+        # scaled_source = self.load_and_scale_ply(ply_2,source)
+        # o3d.visualization.draw_geometries([ply_2,scaled_source])
+
+        # # Preprocesamiento: downsample + normales + FPFH
+        # source_down, source_fpfh = self.preprocess_point_cloud(scaled_source, voxel_size)
+        # target_down, target_fpfh = self.preprocess_point_cloud(ply_2, voxel_size)
+
+        # # Registro global con RANSAC 
+        # result_ransac = self.execute_global_registration(source_down, target_down,
+        #                                             source_fpfh, target_fpfh,
+        #                                             voxel_size)
+        
+        # result_ransac_Wunsch = self.execute_global_registration_Wunsch(source_down, target_down,
+        #                                             source_fpfh, target_fpfh,
+        #                                             voxel_size)
+        # print(result_ransac)
+        # self.print_matrix(result_ransac.transformation,0)
+        # self.draw_registration_result(source_down, target_down, result_ransac.transformation)
+        # self.draw_registration_result(scaled_source, ply_2, result_ransac.transformation)
+        # self.print_matrix(result_ransac.transformation,1)
+        # self.draw_registration_result(source_down, target_down, result_ransac_Wunsch.transformation)
+        # self.draw_registration_result(scaled_source, ply_2, result_ransac_Wunsch.transformation)
+        # ## ======= ply3 and target =================
+        # self.draw_registration_result(source, ply_3, np.identity(4))
+
+        # target_dimensions = self.get_dimensions(ply_3)
+        # #scaled_source = self.scale_point_cloud(source, target_dimensions)
+        # scaled_source = self.load_and_scale_ply(ply_3,source)
+        # o3d.visualization.draw_geometries([ply_3,scaled_source])
+
+        # # Preprocesamiento: downsample + normales + FPFH
+        # source_down, source_fpfh = self.preprocess_point_cloud(scaled_source, voxel_size)
+        # target_down, target_fpfh = self.preprocess_point_cloud(ply_3, voxel_size)
+
+        # # Registro global con RANSAC 
+        # result_ransac = self.execute_global_registration(source_down, target_down,
+        #                                             source_fpfh, target_fpfh,
+        #                                             voxel_size)
+        
+        # result_ransac_Wunsch = self.execute_global_registration_Wunsch(source_down, target_down,
+        #                                             source_fpfh, target_fpfh,
+        #                                             voxel_size)
+        # print(result_ransac)
+        # self.print_matrix(result_ransac.transformation,0)
+        # self.draw_registration_result(source_down, target_down, result_ransac.transformation)
+        # self.draw_registration_result(scaled_source, ply_3, result_ransac.transformation)
+        # self.print_matrix(result_ransac.transformation,1)
+        # self.draw_registration_result(source_down, target_down, result_ransac_Wunsch.transformation)
+        # self.draw_registration_result(scaled_source, ply_3, result_ransac_Wunsch.transformation)
+
+
+        
 
         
 # if __name__ == '__main__':
