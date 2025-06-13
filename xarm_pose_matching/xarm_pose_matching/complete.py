@@ -3,9 +3,6 @@ import numpy as np
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
 import cv2
-import trimesh
-import cvzone
-from PIL import Image, ImageDraw, ImageFont
 import json
 import copy
 from alignment import PointCloudVersion
@@ -59,9 +56,9 @@ class PoseEstimator():
         self.pcd = None
         self.valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
 
-    def processing(self,rgb_path,depth_path):
-        rgb_image = cv2.imread(rgb_path)
-        depth_image = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+    def processing(self,rgb_image,depth_image):
+        # rgb_image = cv2.imread(rgb_path)
+        # depth_image = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
         results = self.model(rgb_image, show=False, save=False)
         rgb_with_masks = rgb_image.copy()
         for result in results:
@@ -119,10 +116,9 @@ class PoseEstimator():
     def ply_generator(self):
         o3d_color = o3d.geometry.Image(self.result_rgb)
         o3d_depth = o3d.geometry.Image(self.result_depth)
-
         rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d_color, o3d_depth, convert_rgb_to_intensity=False)
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, self.camera_intrinsic)
-        pcd.transform([[1,0,0,0], [0,-1,0,0], [0,0,-1,0], [0,0,0,1]])
+        #pcd.transform([[1,0,0,0], [0,-1,0,0], [0,0,-1,0], [0,0,0,1]])
         self.pcd = pcd
         #o3d.io.write_point_cloud("/home/brad/dev_ws/src/xarm_pose_matching/xarm_pose_matching/images/data/rgb_image_V2.ply", pcd)
 
@@ -160,10 +156,10 @@ class PoseEstimator():
 
     def estimator(self):
         model = self.ply
-        ply2 = o3d.io.read_point_cloud(ply2_path)
-        ply3 = o3d.io.read_point_cloud(ply3_path)
-        print(f"ply2 is None? {ply2 is None}")
-        print(f"model is None? {model is None}")
+        # ply2 = o3d.io.read_point_cloud(ply2_path)
+        # ply3 = o3d.io.read_point_cloud(ply3_path)
+        # print(f"ply2 is None? {ply2 is None}")
+        # print(f"model is None? {model is None}")
         # direction, centroid, peduncle_point = self.compute_line(model)
         # direction_scan, centroid_scan, peduncle_point_scan = self.compute_line(self.pcd)
         # #Translated Models
@@ -226,10 +222,8 @@ class PoseEstimator():
         # o3d.visualization.draw_geometries([self.pcd, final_model])
         object1 = PointCloudVersion()
         # Procesar cada imagen
-        model.translate((0, 0.05, 0))
+        #model.translate((0, 0.05, 0))
         model = object1.main(self.pcd,model)
-        model = object1.main(ply2, model)
-        model = object1.main(ply3, model)
 
     def segmentation(self):
         model = self.model
@@ -279,10 +273,11 @@ class PoseEstimator():
             if not os.path.exists(rgb_path) or not os.path.exists(depth_path):
                 print(f"Saltando: {rgb_path} o {depth_path} no existen.")
                 continue
-
+            rgb_image = cv2.imread(rgb_path)
+            depth_image = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
             # Actualiza temporalmente los paths usados por `processing`
             try:
-                self.processing(rgb_path, depth_path)
+                self.processing(rgb_image, depth_image)
             except Exception as e:
                 print(f"Error procesando {image_file}: {e}")
                 continue
@@ -315,10 +310,11 @@ class PoseEstimator():
         plt.tight_layout()
         plt.show()
 
-    def rotation(self):
+    def final(self):
         image_files = [f for f in os.listdir(RGB_dir) if f.lower().endswith(self.valid_extensions)]
         image_files.sort()
         model = self.ply
+        model.rotate(model.get_rotation_matrix_from_xyz((-np.pi / 2, 0, 0)), center=(0, 0, 0))
         min_distances = []
         max_distances = []
         accuracy_ransac = []
@@ -332,12 +328,13 @@ class PoseEstimator():
             filename_base = os.path.splitext(image_file)[0]
             depth_filename = filename_base + ".png"
             depth_path = os.path.join(Depth_dir, depth_filename)
-
+            rgb_image = cv2.imread(rgb_path)
+            depth_image = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
             # Actualiza temporalmente los paths usados por `processing`
             try:
-                self.processing(rgb_path, depth_path)
+                self.processing(rgb_image, depth_image)
                 self.ply_generator()
-                wunsch,ransac = ply.main(self.pcd,model)
+                wunsch,ransac,model = ply.main(self.pcd,model)
             except Exception as e:
                 print(f"Error procesando {image_file}: {e}")
                 continue
@@ -385,14 +382,20 @@ class PoseEstimator():
         plt.tight_layout()
         plt.show()
 
-    def main(self):
-        # self.processing()
-        # self.ply_generator()
+    def main(self,rgb,depth):
+        self.processing(rgb,depth)
+        self.ply_generator()
         # self.plot()
-        # self.estimator()
+        #self.estimator()
         # self.segmentation()
         #self.statistic_graph()
-        self.rotation()
+        #self.final()
+        
+        valid_pixels = self.result_depth[self.result_depth > 0] 
+        min_depth = valid_pixels.min()
+        max_depth = valid_pixels.max()
+        return min_depth, max_depth, self.pcd, self.result_depth
+        
     
     def compute_centroid(self,model): 
         return np.mean(model.points, axis=0)

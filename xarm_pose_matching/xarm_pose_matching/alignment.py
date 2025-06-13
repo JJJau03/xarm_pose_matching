@@ -364,7 +364,7 @@ class PointCloudVersion():
         # ======= source and target =================
         #self.draw_registration_result(source, target, np.identity(4))
 
-        target_dimensions = self.get_dimensions(target)
+        #target_dimensions = self.get_dimensions(target)
         #scaled_source = self.scale_point_cloud(source, target_dimensions)
         scaled_source = self.load_and_scale_ply(target,source)
         #o3d.visualization.draw_geometries([target,scaled_source])
@@ -397,7 +397,9 @@ class PointCloudVersion():
         # print(f"Wunsch - RMSE de correspondencias: {rmse_wunsch:.4f}")
         # self.draw_registration_result(source_down, target_down, result_ransac_Wunsch.transformation)
         # self.draw_registration_result(scaled_source, target, result_ransac_Wunsch.transformation)
-        return rmse_wunsch,rmse_ransac
+        return rmse_wunsch,rmse_ransac,result_ransac_Wunsch.transformation # Return for ros2 node
+        #return rmse_wunsch,rmse_ransac, scaled_source  # Return for final in PoseEstimator python code
+
         
         # ## ======= ply2 and target =================
         # ply_2 = o3d.io.read_point_cloud(self.ply2_path)

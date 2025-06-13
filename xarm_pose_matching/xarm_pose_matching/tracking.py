@@ -29,6 +29,18 @@ class Lectura():
 
             # Realizar inferencia con YOLO
             results = model(frame, show=False)
+            boxes = results[0].boxes.xyxy
+            width = frame.shape[1]
+            for box in boxes:
+                x1,y1,x2,y2 = box[:4]
+                center_x = (x1+x2)/2
+                  # Determinar posición relativa
+                if center_x < width / 3:
+                    print("Objeto a la IZQUIERDA")
+                elif center_x > 2 * width / 3:
+                    print("Objeto a la DERECHA")
+                else:
+                    print("Objeto al CENTRO")
 
             # Dibujar resultados directamente en el frame
             annotated_frame = results[0].plot()
@@ -61,10 +73,42 @@ class Lectura():
 
             # Realizar inferencia con YOLO
             results = model(frame, show=False)
+            boxes = results[0].boxes.xyxy
+            width = frame.shape[1]
+            height = frame.shape[0]
 
-            # Dibujar resultados directamente en la imagen
+            # Tamaño de cada zona
+            cell_width = width / 5
+            cell_height = height / 5
             annotated_frame = results[0].plot()
+            # Dibujar la cuadrícula 5x5 en la imagen
+            for i in range(1, 5):
+                # Líneas verticales
+                x = int(i * cell_width)
+                cv2.line(annotated_frame, (x, 0), (x, height), color=(0, 255, 255), thickness=1)
 
+                # Líneas horizontales
+                y = int(i * cell_height)
+                cv2.line(annotated_frame, (0, y), (width, y), color=(0, 255, 255), thickness=1)
+
+            for box in boxes:
+                x1, y1, x2, y2 = box[:4]
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+
+                # Determinar zona en X y Y (0 a 4)
+                zone_x = int(center_x // cell_width)
+                zone_y = int(center_y // cell_height)
+
+                # Asegurar que no se pase de 4 (por errores de redondeo flotante)
+                zone_x = min(zone_x, 4)
+                zone_y = min(zone_y, 4)
+
+                print(f"{image_file}: Objeto en zona ({zone_x}, {zone_y})")
+                
+                cv2.circle(annotated_frame, (int(center_x), int(center_y)), radius=5, color=(0, 0, 255), thickness=-1)
+
+                # Dibujar resultados directamente en la imagen
             # Mostrar la imagen con anotaciones
             cv2.imshow("YOLO Detection", annotated_frame)
 
